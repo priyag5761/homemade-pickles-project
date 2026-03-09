@@ -1,23 +1,16 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
-# import boto3
+import boto3
 from datetime import datetime
 import json,uuid
 from decimal import Decimal
 
-from pymongo import MongoClient
-
-client = MongoClient("mongodb://localhost:27017/")
-db = client["pickles_db"]
-users_table = db["users"]
-orders_table = db["orders"]
-
 app = Flask(__name__)
 app.secret_key = 'your_very_secret_key_12345'  # Change for production!
 
-# dynamodb = boto3.resource('dynamodb', region_name='ap-south-1')  # e.g., 'us-east-1'
-# users_table = dynamodb.Table('Users')
-# orders_table = dynamodb.Table('Orders')
+dynamodb = boto3.resource('dynamodb', region_name='ap-south-1')  # e.g., 'us-east-1'
+users_table = dynamodb.Table('Users')
+orders_table = dynamodb.Table('Orders')
 
 # # ================== TEMPORARY DATA STORES ==================
 users = {
@@ -70,15 +63,12 @@ def login():
 
         try:
             # Fetch user from DynamoDB
-            # response = users_table.get_item(Key={'username': username})
+            response = users_table.get_item(Key={'username': username})
             
-            # if 'Item' not in response:
-            user = users_table.find_one({"username": username})
-
-            if not user:
+            if 'Item' not in response:
                 return render_template('login.html', error='User not found')
 
-            # user = response['Item']
+            user = response['Item']
 
             # Ensure password field exists in the DB
             if 'password' not in user:
@@ -108,31 +98,21 @@ def signup():
 
         try:
             # Check if username exists
-            # response = users_table.get_item(Key={'username': username})
-            # if 'Item' in response:
-            #     return render_template('signup.html', error='Username already exists')
-            
-            existing_user = users_table.find_one({"username": username})
-            if existing_user:
+            response = users_table.get_item(Key={'username': username})
+            if 'Item' in response:
                 return render_template('signup.html', error='Username already exists')
 
             # Hash password before storing
             hashed_password = generate_password_hash(password)
 
-            # # Store new user in DynamoDB
-            # users_table.put_item(
-            #     Item={
-            #         'username': username,
-            #         'email': email,
-            #         'password': hashed_password  # Store hashed password
-            #     }
-            # )
-            #mongodb
-            users_table.insert_one({
-            "username": username,
-            "email": email,
-            "password": hashed_password
-            })
+            # Store new user in DynamoDB
+            users_table.put_item(
+                Item={
+                    'username': username,
+                    'email': email,
+                    'password': hashed_password  # Store hashed password
+                }
+            )
 
             return redirect(url_for('login'))
 
@@ -183,8 +163,6 @@ def cart():
         return redirect(url_for('login'))
     return render_template('cart.html')
 
-
-
 @app.route('/checkout', methods=['GET', 'POST'])
 def checkout():
     if not session.get('logged_in'):
@@ -223,11 +201,9 @@ def checkout():
 
             # Store order in DynamoDB
             try:
-                # orders_table.put_item(cd
-                #     Item={
-                #         'order_id': str(uuid.uuid4()),
-                orders_table.insert_one({
-                        "order_id": str(uuid.uuid4()),
+                orders_table.put_item(
+                    Item={
+                        'order_id': str(uuid.uuid4()),
                         'username': session.get('username', 'Guest'),
                         'name': name,
                         'address': address,
@@ -259,3 +235,4 @@ def sucess():  # ✅ Match function name with url_for('sucess')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)  # Add debug=True temporarily
+
